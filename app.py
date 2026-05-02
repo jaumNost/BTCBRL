@@ -8,99 +8,96 @@ import xml.etree.ElementTree as ET
 # Configuração da página
 st.set_page_config(page_title="BRAI & Macro Monitor", page_icon="📈", layout="centered")
 
-st.title("📊 Monitor de Investimentos (BRAI & Macro)")
+# --- FUNÇÕES DE APOIO ---
 
-# Criando as abas
-tab1, tab2, tab3 = st.tabs(["📊 Índice BRAI (Longo Prazo)", "⚡ Curto Prazo (24h)", "📰 Tendências e Macro"])
+def analisar_sentimento(titulo):
+    titulo_min = titulo.lower()
+    peso_positivo = ['alta', 'aprova', 'compra', 'crescimento', 'bull', 'suporte', 'otimismo', 'corte', 'adoção', 'lucro', 'investimento', 'etf', 'dispara', 'avança']
+    peso_negativo = ['baixa', 'queda', 'vende', 'processa', 'sec', 'guerra', 'inflação', 'juros', 'hacker', 'crise', 'recessão', 'taxa', 'medo', 'tensão', 'recua', 'foge']
+    score = sum(1 for p in peso_positivo if p in titulo_min) - sum(1 for n in peso_negativo if n in titulo_min)
+    
+    if score > 0: return "🟢 **Potencial Positivo:** Favorece ativos de risco (BTC)."
+    elif score < 0: return "🔴 **Potencial Negativo:** Tende a pressionar o preço para baixo."
+    return "🟡 **Neutro/Misto:** Sem viés direcional forte."
 
-# ==========================================
-# ABA 1: CÁLCULO DO ÍNDICE BRAI (200 DMA)
-# ==========================================
+def buscar_noticias():
+    url = "https://livecoins.com.br/feed/"
+    noticias = []
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=10) as response:
+            root = ET.fromstring(response.read())
+        for item in root.findall('.//item')[:10]:
+            titulo = item.find('title').text
+            link = item.find('link').text
+            data_pub = item.find('pubDate').text if item.find('pubDate') is not None else ""
+            noticias.append({'titulo': titulo, 'link': link, 'data': data_pub, 'analise': analisar_sentimento(titulo)})
+        return noticias
+    except: return []
+
+# --- INTERFACE ---
+
+st.title("📊 Monitor de Investimentos")
+tab1, tab2, tab3 = st.tabs(["📊 Ciclo Longo (BRAI)", "⚡ Curto Prazo (24h)", "📰 Radar Macro"])
+
+# ABA 1: LONGO PRAZO
 with tab1:
-    st.subheader("Índice de Ciclo (BRAI - 200 Dias)")
-    # [Mantendo sua lógica original de 200 dias para o BRAI]
-    def buscar_dados_longo_prazo():
-        try:
-            btc = yf.Ticker("BTC-USD").history(period="400d")
-            usdbrl = yf.Ticker("USDBRL=X").history(period="400d")
-            if btc.empty or usdbrl.empty: return None
-            
-            res = {
-                "btc_p": float(btc['Close'].iloc[-1]),
-                "btc_200": float(btc['Close'].rolling(window=200).mean().iloc[-1]),
-                "dol_a": float(usdbrl['Close'].iloc[-1]),
-                "dol_200": float(usdbrl['Close'].rolling(window=200).mean().iloc[-1])
-            }
-            return res
-        except: return None
+    st.subheader("Índice BRAI (Média de 200 Dias)")
+    if st.button('🔄 Calcular Índice de Ciclo'):
+        with st.spinner('Puxando dados históricos...'):
+            try:
+                btc = yf.Ticker("BTC-USD").history(period="400d")
+                usd = yf.Ticker("USDBRL=X").history(period="400d")
+                
+                btc_p, btc_200 = btc['Close'].iloc[-1], btc['Close'].rolling(200).mean().iloc[-1]
+                usd_p, usd_200 = usd['Close'].iloc[-1], usd['Close'].rolling(200).mean().iloc[-1]
+                
+                indice = (btc_p / btc_200) * (usd_p / usd_200)
+                
+                st.metric("BRAI Atual", f"{indice:.4f}")
+                if indice < 1.0: st.success("Ponto de Acumulação Estratégica")
+                else: st.warning("Atenção: Preço acima da média histórica")
+            except: st.error("Erro ao carregar dados de longo prazo.")
 
-    if st.button('🔄 Calcular BRAI'):
-        d = buscar_dados_longo_prazo()
-        if d:
-            indice = (d['btc_p']/d['btc_200']) * (d['dol_a']/d['dol_200'])
-            st.metric("Índice BRAI Atual", f"{indice:.4f}")
-            if indice < 1.0: st.success("Zona de Acumulação de Longo Prazo")
-            else: st.warning("Zona de Atenção / Realização")
-
-# ==========================================
-# ABA 2: ÍNDICE DE CURTO PRAZO (24 HORAS)
-# ==========================================
-with tab3: # Reordenado conforme pedido
-    pass 
-
+# ABA 2: CURTO PRAZO (A que você clicou e não funcionou)
 with tab2:
-    st.subheader("⚡ Oportunidade Diária (Janela 24h)")
-    st.write("Relaciona a mínima do BTC com a mínima do Dólar no dia para achar o 'preço ideal'.")
-
-    def buscar_dados_24h():
-        try:
-            # Pegando dados de 1 dia com intervalo de 15 minutos para precisão
-            btc_24h = yf.download("BTC-USD", period="1d", interval="15m", progress=False)
-            usd_24h = yf.download("USDBRL=X", period="1d", interval="15m", progress=False)
-            
-            if btc_24h.empty or usd_24h.empty: return None
-
-            dados = {
-                "btc_atual": float(btc_24h['Close'].iloc[-1]),
-                "btc_min_24h": float(btc_24h['Low'].min()),
-                "dol_atual": float(usd_24h['Close'].iloc[-1]),
-                "dol_min_24h": float(usd_24h['Low'].min()),
-            }
-            return dados
-        except: return None
-
-    if st.button('⚡ Verificar Janela de Compra 24h'):
-        with st.spinner('Analisando volatilidade do dia...'):
-            d24 = buscar_dados_24h()
-            if d24:
-                # Distância para a mínima do dia (Quanto menor, melhor a compra)
-                dist_btc = (d24['btc_atual'] / d24['btc_min_24h']) - 1
-                dist_dol = (d24['dol_atual'] / d24['dol_min_24h']) - 1
+    st.subheader("⚡ Janela de Oportunidade 24h")
+    st.write("Busca o melhor momento do dia combinando as mínimas de BTC e Dólar.")
+    
+    if st.button('⚡ Verificar Preço Ideal agora'):
+        with st.spinner('Analisando mínimas do dia...'):
+            try:
+                # Mudança para '5d' para garantir que o Yahoo sempre retorne dados recentes
+                btc_24 = yf.download("BTC-USD", period="2d", interval="15m", progress=False)
+                usd_24 = yf.download("USDBRL=X", period="2d", interval="15m", progress=False)
                 
-                # Índice de Proximidade da Mínima (IPM)
-                # 0% significa que você está comprando EXATAMENTE no melhor preço do dia.
-                ipm = (dist_btc + dist_dol) * 100
-
-                col1, col2 = st.columns(2)
-                col1.metric("Preço BTC", f"US$ {d24['btc_atual']:,.2f}", f"Mín: {d24['btc_min_24h']:,.0f}", delta_color="inverse")
-                col2.metric("Dólar", f"R$ {d24['dol_atual']:.4f}", f"Mín: {d24['dol_min_24h']:.4f}", delta_color="inverse")
-
+                b_atual, b_min = btc_24['Close'].iloc[-1], btc_24['Low'].min()
+                u_atual, u_min = usd_24['Close'].iloc[-1], usd_24['Low'].min()
+                
+                ipm = ((b_atual/b_min) - 1 + (u_atual/u_min) - 1) * 100
+                
+                c1, c2 = st.columns(2)
+                c1.metric("BTC", f"US$ {b_atual:,.0f}", f"Mín: {b_min:,.0f}")
+                c2.metric("Dólar", f"R$ {u_atual:.3f}", f"Mín: {u_min:.3f}")
+                
                 st.divider()
-                st.write(f"**Índice de Proximidade da Mínima (IPM): {ipm:.2f}%**")
+                st.write(f"**Desvio da Mínima Combinada: {ipm:.2f}%**")
                 
-                if ipm < 0.5:
-                    st.success("💎 **OPORTUNIDADE RARA:** Você está comprando quase na mínima simultânea de ambos os ativos!")
-                elif ipm < 1.5:
-                    st.info("✅ **BOM MOMENTO:** O preço está muito próximo do melhor valor das últimas 24h.")
-                else:
-                    st.warning("⏳ **AGUARDE:** O preço subiu em relação às mínimas do dia. Pode haver correção em breve.")
+                if ipm < 0.8: st.success("💎 **COMPRA IMEDIATA:** Preços muito próximos da mínima diária.")
+                elif ipm < 2.0: st.info("✅ **PREÇO BOM:** Pequeno desvio do fundo do dia.")
+                else: st.warning("⏳ **AGUARDE:** O preço esticou. Tente comprar mais perto das mínimas.")
+            except Exception as e:
+                st.error(f"Erro ao calcular 24h: {e}")
 
-                st.caption("Nota: O IPM calcula o desvio combinado entre o preço atual e a mínima de 24h do BTC e do USD/BRL.")
-
-# ==========================================
-# ABA 3: TENDÊNCIAS (Notícias com o Fix de Segurança)
-# ==========================================
+# ABA 3: NOTÍCIAS
 with tab3:
-    st.subheader("Radar Macroeconômico")
-    # [Código das notícias com o cabeçalho de simulação de navegador do Livecoins]
-    # (Inserir aqui a lógica de busca_noticias() anterior)
+    st.subheader("Tendências de Mercado")
+    if st.button('🗞️ Carregar Últimas Notícias'):
+        with st.spinner('Lendo portais...'):
+            noticias = buscar_noticias()
+            if not noticias: st.warning("Não foi possível acessar o portal de notícias.")
+            for n in noticias:
+                st.markdown(f"**[{n['titulo']}]({n['link']})**")
+                st.caption(n['analise'])
+                st.divider()
