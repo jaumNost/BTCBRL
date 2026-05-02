@@ -81,9 +81,8 @@ with tab2:
     def analisar_sentimento(titulo):
         titulo_min = titulo.lower()
         
-        # Dicionário de peso macroeconômico
-        peso_positivo = ['alta', 'aprova', 'compra', 'crescimento', 'bull', 'suporte', 'otimismo', 'corte', 'adoção', 'lucro', 'investimento', 'etf']
-        peso_negativo = ['baixa', 'queda', 'vende', 'processa', 'sec', 'guerra', 'inflação', 'juros', 'hacker', 'crise', 'recessão', 'taxa', 'medo', 'tensão']
+        peso_positivo = ['alta', 'aprova', 'compra', 'crescimento', 'bull', 'suporte', 'otimismo', 'corte', 'adoção', 'lucro', 'investimento', 'etf', 'dispara', 'avança']
+        peso_negativo = ['baixa', 'queda', 'vende', 'processa', 'sec', 'guerra', 'inflação', 'juros', 'hacker', 'crise', 'recessão', 'taxa', 'medo', 'tensão', 'recua', 'foge']
         
         score = 0
         for p in peso_positivo:
@@ -94,17 +93,22 @@ with tab2:
         if score > 0:
             return "🟢 **Potencial Positivo:** O mercado costuma ler isso como injeção de liquidez ou aumento de adoção. Tende a favorecer ativos de risco como o BTC."
         elif score < 0:
-            return "🔴 **Potencial Negativo:** Fatores ligados a aperto monetário (juros/inflação) ou incerteza (guerras/regulação). Tende a tirar dinheiro do BTC para a Renda Fixa americana."
+            return "🔴 **Potencial Negativo:** Fatores ligados a aperto monetário (juros/inflação) ou incerteza (guerras/regulação). Tende a tirar dinheiro do BTC para ativos mais seguros."
         else:
             return "🟡 **Neutro/Misto:** Notícia de impacto local ou sem viés direcional forte imediato para o macro."
 
     def buscar_noticias():
-        # Usando o feed RSS do CoinTelegraph Brasil (gratuito e focado no nosso idioma)
-        url = "https://br.cointelegraph.com/rss"
+        # Trocamos para o Livecoins (muito bom e com feed mais aberto)
+        url = "https://livecoins.com.br/feed/"
         noticias = []
         try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req) as response:
+            # Simulando um navegador real (Chrome no Windows) para evitar bloqueios
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
+            }
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as response:
                 xml_data = response.read()
             root = ET.fromstring(xml_data)
             
@@ -112,11 +116,17 @@ with tab2:
             for item in root.findall('.//item')[:10]:
                 titulo = item.find('title').text
                 link = item.find('link').text
-                data_pub = item.find('pubDate').text
+                
+                # Prevenção extra caso alguma notícia venha sem data
+                data_element = item.find('pubDate')
+                data_pub = data_element.text if data_element is not None else "Data não informada"
+                
                 analise = analisar_sentimento(titulo)
                 noticias.append({'titulo': titulo, 'link': link, 'data': data_pub, 'analise': analise})
             return noticias
         except Exception as e:
+            # Caso ainda dê erro, ele vai imprimir na tela exatamente o que falhou para podermos consertar
+            st.error(f"Erro técnico detalhado: {e}")
             return []
 
     if st.button('🗞️ Buscar Notícias Recentes'):
@@ -124,7 +134,7 @@ with tab2:
             lista_noticias = buscar_noticias()
             
             if not lista_noticias:
-                st.error("Não foi possível carregar as notícias no momento.")
+                st.error("Não foi possível carregar as notícias no momento. Os portais podem estar instáveis.")
             else:
                 for noti in lista_noticias:
                     with st.container():
